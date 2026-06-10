@@ -1,16 +1,12 @@
 name: Publish to npm
 
 on:
-  release:
-    types: [published]
-  workflow_dispatch:
-
-permissions:
-  contents: read
-  id-token: write
+  push:
+    tags:
+      - "v*"
 
 jobs:
-  publish:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -21,18 +17,60 @@ jobs:
           package-manager-cache: false
       - run: npm ci
       - run: npm test
-      - run: npm pack --dry-run
-      - id: published
-        name: Check npm version
+      - name: Check tag matches package version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          package_spec=$(node -p "const p = require('./package.json'); p.name + '@' + p.version")
-          echo "package_spec=${package_spec}" >> "$GITHUB_OUTPUT"
-          if npm view "$package_spec" version > /dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
+          expected="v$(node -p "require('./package.json').version")"
+          if [ "$RELEASE_TAG" != "$expected" ]; then
+            echo "Tag ${RELEASE_TAG} does not match package version ${expected}."
+            exit 1
           fi
-      - if: steps.published.outputs.exists != 'true'
-        run: npm publish
-      - if: steps.published.outputs.exists == 'true'
-        run: echo "${{ steps.published.outputs.package_spec }} is already published; skipping npm publish."
+      - run: npm pack --dry-run
+      - run: npm pack
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: package
+          path: "*.tgz"
+
+  publish-npm:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      # Required for npm Trusted Publishing (OIDC).
+      # Configure the trusted publisher on npm before the first tag push.
+      id-token: write
+    steps:
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      - name: Download package artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: package
+          path: dist/
+
+      - name: Publish to npm
+        run: npm publish ./dist/*.tgz
+
+  github-release:
+    needs: publish-npm
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download package artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: package
+          path: dist/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
