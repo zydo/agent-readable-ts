@@ -2,7 +2,7 @@ import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import type { ExecFileException } from "node:child_process";
-import { writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { chmodSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 const CLI_PATH = join(import.meta.dirname, "..", "src", "cli.js");
@@ -10,7 +10,7 @@ const FIXTURES_DIR = join(import.meta.dirname, "..", ".cli-fixtures");
 
 function exitCode(err: ExecFileException | null): number {
   if (!err) return 0;
-  if ("code" in err) return err.code as number;
+  if (typeof err.code === "number") return err.code;
   return 1;
 }
 
@@ -187,8 +187,15 @@ export declare function fetch(url: string, options?: RequestInit): Promise<Respo
   });
 
   it("prints error for unknown package (on-demand install fails)", async () => {
+    const fakeBinDir = join(FIXTURES_DIR, "bin");
+    mkdirSync(fakeBinDir, { recursive: true });
+    const fakeNpm = join(fakeBinDir, "npm");
+    writeFileSync(fakeNpm, "#!/bin/sh\necho 'simulated npm install failure' >&2\nexit 1\n");
+    chmodSync(fakeNpm, 0o755);
+
     const result = await runCli(["nonexistent-pkg-xyz-12345"], {
       AGENT_READABLE_CACHE: join(FIXTURES_DIR, "cache"),
+      PATH: `${fakeBinDir}:${process.env.PATH ?? ""}`,
     });
     assert.equal(result.code, 1);
     assert.ok(result.stderr.includes("Failed to install"));
