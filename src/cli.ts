@@ -8,6 +8,7 @@ import {
   walkExportPath,
   loadTypeSigs,
   formatExportList,
+  listRuntimeExports,
   loadPackage,
 } from "./packages.js";
 import { pathToFileURL } from "node:url";
@@ -64,14 +65,10 @@ async function handlePackage(spec: string, exportName: string | null): Promise<v
 
   // No export name: list all exports
   if (!exportName) {
-    if (!dtsPath) { /* node:coverage disable */
-      // A loadable package always resolves a TypeScript-visible entry (JS counts as a fallback).
-      fail(`No type declarations found for "${name}". Try a specific export, e.g. "${name}:SomeExport".`);
-    } /* node:coverage enable */
-    const dtsSource = readFileSync(dtsPath, "utf-8");
-    const exports = listPackageExports(dtsSource, dtsPath);
+    const dtsExports = dtsPath ? listPackageExports(readFileSync(dtsPath, "utf-8"), dtsPath) : [];
+    const exports = dtsExports.length > 0 ? dtsExports : listRuntimeExports(mod);
     if (exports.length === 0) fail(`No exports found in "${name}".`);
-    const typeSigs = loadTypeSigs(dtsPath, null);
+    const typeSigs = dtsPath ? loadTypeSigs(dtsPath, null) : undefined;
     process.stdout.write(formatExportList(name, exports, typeSigs));
     return;
   }

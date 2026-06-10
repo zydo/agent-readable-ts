@@ -121,6 +121,23 @@ export function formatExportList(packageName: string, exports: ExportDescriptor[
   return `# ${packageName}\n\n## Exports\n\n${lines.join("\n")}\n`;
 }
 
+function isClassValue(value: unknown): boolean {
+  return typeof value === "function" && /^class\s/.test(Function.prototype.toString.call(value));
+}
+
+function runtimeExportKind(name: string, value: unknown): ExportDescriptor["kind"] {
+  if (name === "default") return "default";
+  if (isClassValue(value)) return "class";
+  if (typeof value === "function") return "function";
+  return "constant";
+}
+
+export function listRuntimeExports(mod: Record<string, unknown>): ExportDescriptor[] {
+  return Object.keys(mod)
+    .filter((name) => name !== "__esModule")
+    .map((name): ExportDescriptor => ({ name, kind: runtimeExportKind(name, mod[name]) }));
+}
+
 // ── on-demand package acquisition ───────────────────────────────────────────────
 
 export function isModuleNotFound(err: unknown): boolean {

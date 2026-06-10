@@ -119,6 +119,27 @@ describe("formatExportList", () => {
   });
 });
 
+describe("listRuntimeExports", () => {
+  it("lists runtime module namespace exports when declarations are unavailable", () => {
+    class Widget {}
+    function build() { /* fixture */ }
+    const out = pkgs.listRuntimeExports({
+      Widget,
+      build,
+      config: { enabled: true },
+      default: Widget,
+      __esModule: true,
+    });
+
+    assert.deepEqual(out, [
+      { name: "Widget", kind: "class" },
+      { name: "build", kind: "function" },
+      { name: "config", kind: "constant" },
+      { name: "default", kind: "default" },
+    ]);
+  });
+});
+
 // ── loadTypeSigs: routing + delegation (parser mocked) ──────────────────────────
 
 describe("loadTypeSigs", () => {

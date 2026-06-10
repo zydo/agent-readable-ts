@@ -186,6 +186,32 @@ export declare function fetch(url: string, options?: RequestInit): Promise<Respo
     assert.ok(result.stdout.includes("## Signature"));
   });
 
+  it("lists runtime exports when package declarations are unavailable", async () => {
+    const cacheDir = join(FIXTURES_DIR, "cache");
+    const packageDir = join(cacheDir, "node_modules", "runtimeonly");
+    mkdirSync(packageDir, { recursive: true });
+    writeFileSync(
+      join(packageDir, "package.json"),
+      JSON.stringify({ name: "runtimeonly", version: "1.0.0", type: "module", main: "index.js" }),
+    );
+    writeFileSync(join(packageDir, "index.js"), `
+export class RuntimeClient {}
+export function toFile() {}
+export const config = {};
+export default RuntimeClient;
+`);
+
+    const result = await runCli(["runtimeonly"], {
+      AGENT_READABLE_CACHE: cacheDir,
+    });
+    assert.equal(result.code, 0);
+    assert.ok(result.stdout.includes("# runtimeonly"));
+    assert.ok(result.stdout.includes("## Exports"));
+    assert.ok(result.stdout.includes("`RuntimeClient` class"));
+    assert.ok(result.stdout.includes("`toFile(...)` function"));
+    assert.ok(result.stdout.includes("`config` object"));
+  });
+
   it("prints error for unknown package (on-demand install fails)", async () => {
     const fakeBinDir = join(FIXTURES_DIR, "bin");
     mkdirSync(fakeBinDir, { recursive: true });
