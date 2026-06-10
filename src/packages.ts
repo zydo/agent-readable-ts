@@ -202,6 +202,22 @@ function packageJsonFromEntry(entryPath: string): string | null {
   return null;
 }
 
+export function resolvePackageRootFromDir(name: string, dir: string): string | null {
+  const req = createRequire(join(dir, "__resolve__.js"));
+  try {
+    return dirname(req.resolve(`${name}/package.json`));
+  } catch {
+    // package.json may be hidden by the package exports map.
+  }
+
+  try {
+    const pkgJsonPath = packageJsonFromEntry(req.resolve(name));
+    return pkgJsonPath ? dirname(pkgJsonPath) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function resolveLocalPackageRoot(name: string): string | null {
   const req = createRequire(import.meta.url);
   try {
@@ -269,5 +285,5 @@ export async function loadPackage(spec: string, cacheDir: string = CACHE_DIR): P
   // Not installed locally: fetch on demand into the cache, then load from there.
   const dir = ensureCacheInstall(name, install, cacheDir);
   const mod = await importFromDir(name, dir);
-  return { mod, typesDir: dir };
+  return { mod, typesDir: resolvePackageRootFromDir(name, dir) ?? dir };
 }

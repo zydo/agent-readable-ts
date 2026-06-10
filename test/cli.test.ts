@@ -212,6 +212,45 @@ export default RuntimeClient;
     assert.ok(result.stdout.includes("`config` object"));
   });
 
+  it("extracts types from an on-demand cached package", async () => {
+    const cacheDir = join(FIXTURES_DIR, "typed-cache");
+    const packageDir = join(cacheDir, "node_modules", "typedcache");
+    mkdirSync(packageDir, { recursive: true });
+    writeFileSync(
+      join(packageDir, "package.json"),
+      JSON.stringify({
+        name: "typedcache",
+        version: "1.0.0",
+        type: "module",
+        main: "index.js",
+        types: "index.d.ts",
+        exports: {
+          ".": {
+            types: "./index.d.ts",
+            default: "./index.js",
+          },
+        },
+      }),
+    );
+    writeFileSync(join(packageDir, "index.js"), `
+export class Client {
+  run(input) {}
+}
+`);
+    writeFileSync(join(packageDir, "index.d.ts"), `
+export declare class Client {
+  run(input: string): Promise<void>;
+}
+`);
+
+    const result = await runCli(["typedcache:Client"], {
+      AGENT_READABLE_CACHE: cacheDir,
+    });
+    assert.equal(result.code, 0);
+    assert.ok(result.stdout.includes("# Client"));
+    assert.ok(result.stdout.includes("run(input: string): Promise<void>"));
+  });
+
   it("prints error for unknown package (on-demand install fails)", async () => {
     const fakeBinDir = join(FIXTURES_DIR, "bin");
     mkdirSync(fakeBinDir, { recursive: true });

@@ -7,6 +7,12 @@ type TsApi = typeof import("typescript");
 
 let _ts: TsApi | null | undefined;
 
+interface ImportBinding {
+  specifier: string;
+  exportName: string;
+  namespace: boolean;
+}
+
 function getTs(): TsApi | null {
   if (_ts === undefined) {
     try {
@@ -25,26 +31,51 @@ function extractParams(params: unknown[]): ParamTypeInfo[] {
   }));
 }
 
+function isPrivateMember(ts: TsApi, node: unknown): boolean {
+  const modifiers = (node as { modifiers?: unknown[] }).modifiers;
+  return !!modifiers?.some((m) => (m as { kind: number }).kind === ts.SyntaxKind.PrivateKeyword);
+}
+
+function markDeclaredMember(result: TypeSignatureMap, name: string): void {
+  result.declaredMembers ??= new Set<string>();
+  result.declaredMembers.add(name);
+}
+
+function mergeDeclaredMembers(target: TypeSignatureMap, source: TypeSignatureMap): void {
+  if (!source.declaredMembers) return;
+  target.declaredMembers ??= new Set<string>();
+  for (const name of source.declaredMembers) {
+    target.declaredMembers.add(name);
+  }
+}
+
 function visitClass(ts: TsApi, node: unknown, result: TypeSignatureMap): void {
   const decl = node as { members: unknown[] };
   for (const member of decl.members) {
     const m = member as {
       name?: { getText(): string };
-      parameters: unknown[];
+      parameters?: unknown[];
       type?: { getText(): string };
       kind: number;
     };
     if (!m.name) continue;
+    if (isPrivateMember(ts, member)) continue;
+
+    const name = m.name.getText();
     if (m.kind === ts.SyntaxKind.MethodDeclaration && !result.has(m.name.getText())) {
-      result.set(m.name.getText(), {
-        params: extractParams(m.parameters),
+      markDeclaredMember(result, name);
+      result.set(name, {
+        params: extractParams(m.parameters ?? []),
         returnType: m.type ? m.type.getText().replace(/\s+/g, " ").trim() : null,
       });
     } else if (m.kind === ts.SyntaxKind.GetAccessor && !result.has(m.name.getText())) {
-      result.set(m.name.getText(), {
+      markDeclaredMember(result, name);
+      result.set(name, {
         params: [],
         returnType: m.type ? m.type.getText().replace(/\s+/g, " ").trim() : null,
       });
+    } else if (m.kind === ts.SyntaxKind.PropertyDeclaration) {
+      markDeclaredMember(result, name);
     }
   }
 }
@@ -140,6 +171,10 @@ function resolveModulePath(ts: TsApi, specifier: string, fromFile: string): stri
     ?? resolveRelativeSpecifier(specifier, fromFile);
 }
 
+function visitKey(filePath: string, exportName: string | null): string {
+  return `${filePath}\0${exportName ?? "*"}`;
+}
+
 function getSearchDirs(fromFile: string): string[] {
   const dirs: string[] = [];
   let dir = dirname(fromFile);
@@ -194,6 +229,90 @@ function collectModuleBody(api: TsApi, node: unknown, visit: (n: unknown) => voi
   }
 }
 
+function collectImportBindings(api: TsApi, sf: unknown): Map<string, ImportBinding> {
+  const bindings = new Map<string, ImportBinding>();
+
+  api.forEachChild(sf as Parameters<typeof api.forEachChild>[0], (node: unknown) => {
+    if (!api.isImportDeclaration(node as Parameters<typeof api.isImportDeclaration>[0])) return;
+    const n = node as {
+      moduleSpecifier?: { text?: unknown };
+      importClause?: {
+        name?: { getText(): string };
+        namedBindings?: unknown;
+      };
+    };
+    const specifier = typeof n.moduleSpecifier?.text === "string" ? n.moduleSpecifier.text : null;
+    if (!specifier || !n.importClause) return;
+
+    const defaultName = n.importClause.name?.getText();
+    if (defaultName) {
+      bindings.set(defaultName, { specifier, exportName: defaultName, namespace: false });
+    }
+
+    const namedBindings = n.importClause.namedBindings;
+    if (!namedBindings) return;
+    if (api.isNamedImports(namedBindings as Parameters<typeof api.isNamedImports>[0])) {
+      const imports = namedBindings as { elements: Array<{ name: { getText(): string }; propertyName?: { getText(): string } }> };
+      for (const el of imports.elements) {
+        bindings.set(el.name.getText(), {
+          specifier,
+          exportName: el.propertyName?.getText() ?? el.name.getText(),
+          namespace: false,
+        });
+      }
+    } else if (api.isNamespaceImport(namedBindings as Parameters<typeof api.isNamespaceImport>[0])) {
+      const ns = namedBindings as { name: { getText(): string } };
+      bindings.set(ns.name.getText(), { specifier, exportName: "*", namespace: true });
+    }
+  });
+
+  return bindings;
+}
+
+function importBindingForParent(
+  parentExpression: string | undefined,
+  imports: Map<string, ImportBinding>,
+): { specifier: string; exportName: string } | null {
+  if (!parentExpression) return null;
+  const parts = parentExpression.split(".");
+  const binding = imports.get(parts[0]);
+  if (!binding) return null;
+  if (binding.namespace) {
+    const exportName = parts.slice(1).join(".");
+    return exportName ? { specifier: binding.specifier, exportName } : null;
+  }
+  return { specifier: binding.specifier, exportName: binding.exportName };
+}
+
+function mergeImportedParentSigs(
+  api: TsApi,
+  parentExpression: string | undefined,
+  filePath: string | null,
+  imports: Map<string, ImportBinding>,
+  visited: Set<string>,
+  result: TypeSignatureMap,
+): boolean {
+  if (!filePath) return false;
+  const binding = importBindingForParent(parentExpression, imports);
+  if (!binding) return false;
+
+  const resolvedPath = resolveModulePath(api, binding.specifier, filePath);
+  if (!resolvedPath || visited.has(visitKey(resolvedPath, binding.exportName))) return false;
+  visited.add(visitKey(resolvedPath, binding.exportName));
+
+  try {
+    const source = readFileSync(resolvedPath, "utf-8");
+    const inherited = parseSourceForTypes(api, source, binding.exportName, resolvedPath, visited);
+    for (const [key, value] of inherited) {
+      if (!result.has(key)) result.set(key, value);
+    }
+    mergeDeclaredMembers(result, inherited);
+    return inherited.size > 0;
+  } catch {
+    return false;
+  }
+}
+
 function collectReExport(
   api: TsApi,
   node: unknown,
@@ -207,8 +326,8 @@ function collectReExport(
   if (!n.moduleSpecifier || typeof n.moduleSpecifier.text !== "string" || !filePath) return;
 
   const resolvedPath = resolveModulePath(api, n.moduleSpecifier.text, filePath);
-  if (!resolvedPath || visited.has(resolvedPath)) return;
-  visited.add(resolvedPath);
+  if (!resolvedPath || visited.has(visitKey(resolvedPath, exportName))) return;
+  visited.add(visitKey(resolvedPath, exportName));
 
   try {
     const resolvedSource = readFileSync(resolvedPath, "utf-8");
@@ -216,6 +335,7 @@ function collectReExport(
     for (const [key, value] of resolvedSigs) {
       if (!result.has(key)) result.set(key, value);
     }
+    mergeDeclaredMembers(result, resolvedSigs);
   } catch {
     // resolved file not readable, skip
   }
@@ -225,6 +345,9 @@ function collectInheritanceChain(
   api: TsApi,
   exportName: string,
   classMap: Map<string, unknown>,
+  filePath: string | null,
+  imports: Map<string, ImportBinding>,
+  visited: Set<string>,
   result: TypeSignatureMap,
 ): void {
   const targetClass = classMap.get(exportName);
@@ -239,7 +362,12 @@ function collectInheritanceChain(
     visitClass(api, decl, result);
     const cls = decl as { heritageClauses?: Array<{ types: Array<{ expression: { getText(): string } }> }> };
     const parent = cls.heritageClauses?.[0]?.types?.[0]?.expression?.getText();
-    current = parent && classMap.has(parent) ? parent : "";
+    if (parent && classMap.has(parent)) {
+      current = parent;
+    } else {
+      mergeImportedParentSigs(api, parent, filePath, imports, visited, result);
+      current = "";
+    }
   }
 }
 
@@ -253,9 +381,11 @@ function parseSourceForTypes(
   visited: Set<string>,
 ): TypeSignatureMap {
   const sf = ts.createSourceFile(filePath ?? "input.ts", source, ts.ScriptTarget.Latest, true);
+  if (filePath) visited.add(visitKey(filePath, exportName));
   const result: TypeSignatureMap = new Map();
   const api = ts;
   const classMap = new Map<string, unknown>();
+  const imports = collectImportBindings(api, sf);
 
   function visit(node: unknown): void {
     collectClassAndFunc(api, node, exportName, classMap, result);
@@ -267,7 +397,7 @@ function parseSourceForTypes(
   api.forEachChild(sf, visit);
 
   if (exportName) {
-    collectInheritanceChain(api, exportName, classMap, result);
+    collectInheritanceChain(api, exportName, classMap, filePath, imports, visited, result);
   } else {
     for (const [, decl] of classMap) {
       visitClass(api, decl, result);
@@ -395,7 +525,7 @@ export function parseTypeSignatures(
   if (!ts) return null;
 
   const visited = new Set<string>();
-  if (filePath) visited.add(filePath);
+  if (filePath) visited.add(visitKey(filePath, exportName));
 
   const result = parseSourceForTypes(ts, source, exportName, filePath ?? null, visited);
   return result.size > 0 ? result : null;

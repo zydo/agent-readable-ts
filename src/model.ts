@@ -26,7 +26,10 @@ export interface MethodTypeSignature {
 }
 
 /** Map from member name to its TypeScript type signature. */
-export type TypeSignatureMap = Map<string, MethodTypeSignature>;
+export interface TypeSignatureMap extends Map<string, MethodTypeSignature> {
+  /** Runtime member names exposed by the parsed declarations. */
+  declaredMembers?: Set<string>;
+}
 
 // ── format-neutral intermediate representation ──────────────────────────────────
 
@@ -353,6 +356,7 @@ function collectMemberFromDesc(
   typeSigs?: TypeSignatureMap,
 ): void {
   if (seen.has(name) || isExcluded(name)) return;
+  if (typeSigs?.declaredMembers && !typeSigs.declaredMembers.has(name)) return;
   if (objProtoNames.has(name) && typeof desc.value !== "function") return;
   if (typeof desc.value === "function") {
     seen.add(name);

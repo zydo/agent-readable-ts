@@ -48,6 +48,22 @@ describe("buildClassDoc", () => {
     assert.deepEqual(d.members?.[0], { name: "get", kind: "method", signature: "(k: string): unknown" });
   });
 
+  it("filters runtime members not exposed by declarations", () => {
+    class Client {
+      visible(_input: string): void { /* stub */ }
+      hidden(): void { /* stub */ }
+    }
+    const typeSigs = new Map([
+      ["visible", { params: [{ name: "input", type: "string" }], returnType: "void" }],
+    ]) as Model.TypeSignatureMap;
+    typeSigs.declaredMembers = new Set(["visible"]);
+
+    const d = model.buildClassDoc(Client, null, typeSigs);
+    assert.deepEqual(d.members, [
+      { name: "visible", kind: "method", signature: "(input: string): void" },
+    ]);
+  });
+
   it("names anonymous classes AnonymousClass and yields empty members", () => {
     const Cls = class { // NOSONAR: intentionally empty test fixture
     };

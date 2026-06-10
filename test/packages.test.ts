@@ -1,6 +1,6 @@
 import { describe, it, before, beforeEach, afterEach, mock } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type * as Pkgs from "../src/packages.js";
@@ -243,9 +243,22 @@ describe("on-demand package load", () => {
     mkdirSync(pkgDir, { recursive: true });
     writeFileSync(
       join(pkgDir, "package.json"),
-      JSON.stringify({ name: "fakepkg", version: "1.0.0", type: "module", main: "index.js" }),
+      JSON.stringify({
+        name: "fakepkg",
+        version: "1.0.0",
+        type: "module",
+        main: "index.js",
+        types: "index.d.ts",
+        exports: {
+          ".": {
+            types: "./index.d.ts",
+            default: "./index.js",
+          },
+        },
+      }),
     );
     writeFileSync(join(pkgDir, "index.js"), "export const hello = 1;\nexport default { hi: 2 };\n");
+    writeFileSync(join(pkgDir, "index.d.ts"), "export declare const hello: number;\n");
   });
   afterEach(() => {
     rmSync(root, { recursive: true, force: true });
@@ -278,6 +291,12 @@ describe("on-demand package load", () => {
     assert.ok(existsSync(join(root, "package.json")));
   });
 
+  it("resolves the package root from an on-demand install directory", () => {
+    const resolved = pkgs.resolvePackageRootFromDir("fakepkg", root);
+    assert.ok(resolved);
+    assert.equal(realpathSync(resolved), realpathSync(join(root, "node_modules", "fakepkg")));
+  });
+
   it("importFromDir throws when package has no resolvable entry", async () => {
     const pkgDir = join(root, "node_modules", "norev");
     mkdirSync(pkgDir, { recursive: true });
@@ -287,7 +306,7 @@ describe("on-demand package load", () => {
 
   it("loadPackage loads from cache when package is not installed locally", async () => {
     const mod = await pkgs.loadPackage("fakepkg", root);
-    assert.equal(mod.typesDir, root);
+    assert.equal(realpathSync(mod.typesDir), realpathSync(join(root, "node_modules", "fakepkg")));
     assert.equal(mod.mod.hello, 1);
   });
 

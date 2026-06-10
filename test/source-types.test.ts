@@ -53,6 +53,29 @@ export declare class Loose {
     });
   });
 
+  it("marks declared non-private class members and skips private declarations", () => {
+    const source = `
+export declare class Client {
+  publicMethod(input: string): void;
+  protected protectedMethod(count: number): boolean;
+  private privateMethod;
+}
+`;
+    const sigs = parseTypeSignatures(source, "Client");
+    assert.ok(sigs);
+    assert.deepEqual(sigs.get("publicMethod"), {
+      params: [{ name: "input", type: "string" }],
+      returnType: "void",
+    });
+    assert.deepEqual(sigs.get("protectedMethod"), {
+      params: [{ name: "count", type: "number" }],
+      returnType: "boolean",
+    });
+    assert.ok(sigs.declaredMembers?.has("publicMethod"));
+    assert.ok(sigs.declaredMembers?.has("protectedMethod"));
+    assert.equal(sigs.declaredMembers?.has("privateMethod"), false);
+  });
+
   it("walks the inheritance chain to collect inherited methods", () => {
     const source = `
 declare class Base {
@@ -147,6 +170,56 @@ export declare function two(b: number): boolean;
       const sigs = parseTypeSignatures(`export * from "./helper";\n`, null, indexPath);
       assert.ok(sigs);
       assert.ok(sigs.has("helper"));
+    });
+
+    it("collects inherited methods from an imported parent class", () => {
+      const basePath = join(FIXTURES_DIR, "base.d.ts");
+      const childPath = join(FIXTURES_DIR, "child.d.ts");
+      writeFileSync(basePath, `export declare class Base { baseMethod(x: number): void; }\n`);
+      const childSource = `
+import { Base } from "./base";
+export declare class Child extends Base {
+  childMethod(y: string): boolean;
+}
+`;
+      writeFileSync(childPath, childSource);
+
+      const sigs = parseTypeSignatures(childSource, "Child", childPath);
+      assert.ok(sigs);
+      assert.deepEqual(sigs.get("childMethod"), {
+        params: [{ name: "y", type: "string" }],
+        returnType: "boolean",
+      });
+      assert.deepEqual(sigs.get("baseMethod"), {
+        params: [{ name: "x", type: "number" }],
+        returnType: "void",
+      });
+    });
+
+    it("tracks re-export visits per requested export while resolving inheritance", () => {
+      const basePath = join(FIXTURES_DIR, "base.d.ts");
+      const childPath = join(FIXTURES_DIR, "child.d.ts");
+      const indexPath = join(FIXTURES_DIR, "index.d.ts");
+      writeFileSync(basePath, `export declare class Base { baseMethod(x: number): void; }\n`);
+      writeFileSync(
+        childPath,
+        `
+import { Base } from "./base";
+export declare class Child extends Base {
+  childMethod(y: string): boolean;
+}
+`,
+      );
+      const indexSource = `
+export { Base } from "./base";
+export { Child } from "./child";
+`;
+      writeFileSync(indexPath, indexSource);
+
+      const sigs = parseTypeSignatures(indexSource, "Child", indexPath);
+      assert.ok(sigs);
+      assert.ok(sigs.has("childMethod"));
+      assert.ok(sigs.has("baseMethod"));
     });
 
     it("returns null for unresolvable node: specifier", () => {
