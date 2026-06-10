@@ -87,6 +87,28 @@ function tryTsResolve(ts: TsApi, specifier: string, fromFile: string): string | 
   return null;
 }
 
+function resolveDirectPackageTypes(packageName: string, fromDir: string): string | null {
+  const pkgJsonPath = resolve(fromDir, "package.json");
+  if (!existsSync(pkgJsonPath)) return null;
+
+  try {
+    const pkg = JSON.parse(readFileSync(pkgJsonPath, "utf-8")) as {
+      name?: unknown;
+      types?: unknown;
+      typings?: unknown;
+    };
+    if (pkg.name !== packageName) return null;
+    const typesPath =
+      (typeof pkg.types === "string" && pkg.types) ||
+      (typeof pkg.typings === "string" && pkg.typings);
+    if (!typesPath) return null;
+    const absoluteTypesPath = resolve(dirname(pkgJsonPath), typesPath);
+    return existsSync(absoluteTypesPath) ? absoluteTypesPath : null;
+  } catch {
+    return null;
+  }
+}
+
 function resolveNodeSpecifier(specifier: string, fromFile: string): string | null {
   const nodeMatch = /^node:(.+)$/.exec(specifier);
   if (!nodeMatch) return null;
@@ -258,6 +280,9 @@ function parseSourceForTypes(
 // ── package resolution ──────────────────────────────────────────────────────────
 
 export function resolvePackageTypesPath(packageName: string, fromDir: string = process.cwd()): string | null {
+  const directTypesPath = resolveDirectPackageTypes(packageName, fromDir);
+  if (directTypesPath) return directTypesPath;
+
   const ts = getTs();
   if (!ts) return null;
   const virtualFrom = resolve(fromDir, "__resolve__.ts");

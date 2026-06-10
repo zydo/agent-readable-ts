@@ -221,6 +221,18 @@ describe("isInstalledIn", () => {
   });
 });
 
+describe("local package load", () => {
+  it("returns the actual package root for locally resolvable packages", async () => {
+    const root = pkgs.resolveLocalPackageRoot("commander");
+    assert.ok(root);
+    assert.ok(root.endsWith(join("node_modules", "commander")));
+
+    const loaded = await pkgs.loadPackage("commander");
+    assert.equal(loaded.typesDir, root);
+    assert.ok("Command" in loaded.mod);
+  });
+});
+
 // ── on-demand load (no network) ─────────────────────────────────────────────────
 
 describe("on-demand package load", () => {

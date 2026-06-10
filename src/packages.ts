@@ -8,8 +8,8 @@
  */
 
 import { parseTypeSignatures } from "./source-types.js";
-import { pathToFileURL } from "node:url";
-import { join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { dirname, join } from "node:path";
 import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { execFileSync } from "node:child_process";
@@ -192,6 +192,42 @@ function resolveEntry(name: string, dir: string): string | null {
   }
 }
 
+function packageJsonFromEntry(entryPath: string): string | null {
+  let dir = dirname(entryPath);
+  while (dir !== dirname(dir)) {
+    const pkgJsonPath = join(dir, "package.json");
+    if (existsSync(pkgJsonPath)) return pkgJsonPath;
+    dir = dirname(dir);
+  }
+  return null;
+}
+
+export function resolveLocalPackageRoot(name: string): string | null {
+  const req = createRequire(import.meta.url);
+  try {
+    return dirname(req.resolve(`${name}/package.json`));
+  } catch {
+    // package.json may be hidden by the package exports map.
+  }
+
+  try {
+    const resolvedUrl = import.meta.resolve(name);
+    if (resolvedUrl.startsWith("file:")) {
+      const pkgJsonPath = packageJsonFromEntry(fileURLToPath(resolvedUrl));
+      if (pkgJsonPath) return dirname(pkgJsonPath);
+    }
+  } catch {
+    // Fall back to the CommonJS resolver below.
+  }
+
+  try {
+    const pkgJsonPath = packageJsonFromEntry(req.resolve(name));
+    return pkgJsonPath ? dirname(pkgJsonPath) : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function importFromDir(name: string, dir: string): Promise<Record<string, unknown>> {
   // A loader placed in `dir` resolves the bare specifier against dir/node_modules;
   // dynamic import transparently handles both CJS and ESM packages.
@@ -223,7 +259,7 @@ export async function loadPackage(spec: string, cacheDir: string = CACHE_DIR): P
   // Prefer a copy already resolvable from the current project.
   try {
     const mod = (await import(name)) as Record<string, unknown>;
-    return { mod, typesDir: process.cwd() };
+    return { mod, typesDir: resolveLocalPackageRoot(name) ?? process.cwd() };
   } catch (err) {
     if (!isModuleNotFound(err)) {
       throw new Error(`Cannot import package "${name}": ${err instanceof Error ? err.message : String(err)}`);

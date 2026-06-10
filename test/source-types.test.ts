@@ -240,10 +240,31 @@ export declare class Shown {}
 // ── resolvePackageTypesPath ─────────────────────────────────────────────────────
 
 describe("resolvePackageTypesPath", () => {
+  beforeEach(() => {
+    mkdirSync(FIXTURES_DIR, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(FIXTURES_DIR, { recursive: true, force: true });
+  });
+
   it("resolves the declaration path of an installed package", () => {
     const path = resolvePackageTypesPath("typescript");
     assert.ok(path);
     assert.ok(path.endsWith(".d.ts"));
+  });
+
+  it("uses a package root directory directly when provided", () => {
+    const pkgDir = join(FIXTURES_DIR, "rootpkg");
+    const typesPath = join(pkgDir, "types", "index.d.ts");
+    mkdirSync(join(pkgDir, "types"), { recursive: true });
+    writeFileSync(typesPath, "export declare class Root { run(flag: boolean): void; }\n");
+    writeFileSync(
+      join(pkgDir, "package.json"),
+      JSON.stringify({ name: "rootpkg", version: "1.0.0", types: "types/index.d.ts" }),
+    );
+
+    assert.equal(resolvePackageTypesPath("rootpkg", pkgDir), typesPath);
   });
 
   it("returns null for a package that is not installed", () => {

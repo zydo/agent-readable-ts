@@ -175,8 +175,8 @@ export declare function fetch(url: string, options?: RequestInit): Promise<Respo
     assert.equal(result.code, 0);
     assert.ok(result.stdout.includes("# Command"));
     assert.ok(result.stdout.includes("## Public API"));
-    assert.ok(result.stdout.includes("option("));
-    assert.ok(result.stdout.includes("parse("));
+    assert.ok(result.stdout.includes("option(flags: string"));
+    assert.ok(result.stdout.includes("parse(argv: readonly string[]"));
   });
 
   it("documents a function export from a package", async () => {
