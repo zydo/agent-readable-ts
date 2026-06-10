@@ -37,10 +37,12 @@
   "engines": {
     "node": ">=20.0.0"
   },
+  "dependencies": {
+    "typescript": "^5.5.0"
+  },
   "devDependencies": {
     "@types/node": "^25.9.1",
     "commander": "^15.0.0",
-    "tsx": "^4.19.0",
-    "typescript": "^5.5.0"
+    "tsx": "^4.19.0"
   }
 }
