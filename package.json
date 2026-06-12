@@ -1,6 +1,6 @@
 {
   "name": "agent-readable-ts",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Attach agent-oriented documentation to any class, object, or function",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
