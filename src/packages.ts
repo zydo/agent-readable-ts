@@ -161,20 +161,42 @@ export function isInstalledIn(name: string, dir: string): boolean {
   }
 }
 
-export function ensureCacheInstall(name: string, install: string, dir: string = CACHE_DIR): string {
+export function ensureCacheInstall(
+  name: string,
+  install: string,
+  dir: string = CACHE_DIR,
+  allowInstall = false,
+): string {
   mkdirSync(dir, { recursive: true });
   const pkgJson = join(dir, "package.json");
   if (!existsSync(pkgJson)) {
     writeFileSync(pkgJson, JSON.stringify({ name: "agent-readable-cache", private: true }) + "\n");
   }
   if (!isInstalledIn(name, dir)) {
+    if (!allowInstall) {
+      throw new Error(
+        `Package "${name}" is not installed. ` +
+        `Run "npm install ${install}" in your project, or re-run with --install to fetch it on demand.`,
+      );
+    }
     process.stderr.write(`Installing ${install} on demand into ${dir} ...\n`);
     try {
       // Save into the cache's own package.json so previously fetched packages are
       // not pruned as "extraneous" when a different package is installed later.
+      // --ignore-scripts prevents arbitrary lifecycle scripts from running.
       execFileSync(
         "npm",
-        ["install", install, "--prefix", dir, "--save", "--no-audit", "--no-fund", "--loglevel=error"],
+        [
+          "install",
+          install,
+          "--prefix",
+          dir,
+          "--save",
+          "--ignore-scripts",
+          "--no-audit",
+          "--no-fund",
+          "--loglevel=error",
+        ],
         { stdio: ["ignore", "ignore", "inherit"] },
       );
     } catch (err) {
@@ -269,7 +291,11 @@ export interface LoadedPackage {
   typesDir: string;
 }
 
-export async function loadPackage(spec: string, cacheDir: string = CACHE_DIR): Promise<LoadedPackage> {
+export async function loadPackage(
+  spec: string,
+  cacheDir: string = CACHE_DIR,
+  allowInstall = false,
+): Promise<LoadedPackage> {
   const { name, install } = splitPackageSpec(spec);
 
   // Prefer a copy already resolvable from the current project.
@@ -283,7 +309,7 @@ export async function loadPackage(spec: string, cacheDir: string = CACHE_DIR): P
   }
 
   // Not installed locally: fetch on demand into the cache, then load from there.
-  const dir = ensureCacheInstall(name, install, cacheDir);
+  const dir = ensureCacheInstall(name, install, cacheDir, allowInstall);
   const mod = await importFromDir(name, dir);
   return { mod, typesDir: resolvePackageRootFromDir(name, dir) ?? dir };
 }

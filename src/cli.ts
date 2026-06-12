@@ -17,8 +17,12 @@ import { readFileSync } from "node:fs";
 
 function usage(): never {
   process.stderr.write(
-    "Usage: agent-readable-ts <module-path>[:<export-name>]\n" +
-    "       agent-readable-ts <package-name>[:<export-name>]\n",
+    "Usage: agent-readable-ts [--install] <module-path>[:<export-name>]\n" +
+    "       agent-readable-ts [--install] <package-name>[:<export-name>]\n" +
+    "\n" +
+    "Options:\n" +
+    "  --install  Allow fetching a package on demand (with npm install) when it\n" +
+    "             is not already installed locally or in the cache.\n",
   );
   process.exit(1);
 }
@@ -57,9 +61,9 @@ async function handleFile(modulePath: string, exportName: string | null): Promis
 
 // ── package-based handling ─────────────────────────────────────────────────────
 
-async function handlePackage(spec: string, exportName: string | null): Promise<void> {
+async function handlePackage(spec: string, exportName: string | null, allowInstall: boolean): Promise<void> {
   const { name } = splitPackageSpec(spec);
-  const { mod, typesDir } = await loadPackage(spec);
+  const { mod, typesDir } = await loadPackage(spec, undefined, allowInstall);
 
   const dtsPath = resolvePackageTypesPath(name, typesDir);
 
@@ -81,13 +85,23 @@ async function handlePackage(spec: string, exportName: string | null): Promise<v
 
 // ── main ───────────────────────────────────────────────────────────────────────
 
-const specifier = process.argv[2];
+const args = process.argv.slice(2);
+const allowInstall = args.includes("--install");
+const positional = args.filter((arg) => arg !== "--install");
+
+const unknownFlag = positional.find((arg) => arg.startsWith("--"));
+if (unknownFlag) {
+  process.stderr.write(`Error: Unknown option "${unknownFlag}"\n`);
+  usage();
+}
+
+const specifier = positional[0];
 if (!specifier) usage();
 
 try {
   const { modulePath, exportName } = parseSpecifier(specifier);
   if (isBarePackageName(modulePath)) {
-    await handlePackage(modulePath, exportName);
+    await handlePackage(modulePath, exportName, allowInstall);
   } else {
     await handleFile(modulePath, exportName);
   }

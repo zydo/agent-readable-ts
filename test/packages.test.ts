@@ -291,6 +291,13 @@ describe("on-demand package load", () => {
     assert.ok(existsSync(join(root, "package.json")));
   });
 
+  it("ensureCacheInstall refuses to install a missing package without allowInstall", () => {
+    assert.throws(
+      () => pkgs.ensureCacheInstall("not-a-real-pkg-zzz-987", "not-a-real-pkg-zzz-987", root),
+      /not installed.*--install/,
+    );
+  });
+
   it("resolves the package root from an on-demand install directory", () => {
     const resolved = pkgs.resolvePackageRootFromDir("fakepkg", root);
     assert.ok(resolved);
@@ -308,6 +315,10 @@ describe("on-demand package load", () => {
     const mod = await pkgs.loadPackage("fakepkg", root);
     assert.equal(realpathSync(mod.typesDir), realpathSync(join(root, "node_modules", "fakepkg")));
     assert.equal(mod.mod.hello, 1);
+  });
+
+  it("loadPackage rejects a missing package without allowInstall instead of fetching it", async () => {
+    await assert.rejects(() => pkgs.loadPackage("not-a-real-pkg-zzz-987", root), /not installed.*--install/);
   });
 
   it("loadPackage rethrows a non-module-not-found error from the local import", async () => {

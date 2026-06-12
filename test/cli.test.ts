@@ -46,7 +46,23 @@ describe("CLI", () => {
     const result = await runCli([]);
     assert.equal(result.code, 1);
     assert.ok(result.stderr.includes("Usage"));
+    assert.ok(result.stderr.includes("--install"));
     assert.equal(result.stdout, "");
+  });
+
+  it("rejects unknown options with usage", async () => {
+    const result = await runCli(["--bogus", "commander"]);
+    assert.equal(result.code, 1);
+    assert.ok(result.stderr.includes('Unknown option "--bogus"'));
+    assert.ok(result.stderr.includes("Usage"));
+  });
+
+  it("refuses to fetch a missing package without --install", async () => {
+    const cacheDir = join(FIXTURES_DIR, "cache");
+    const result = await runCli(["not-a-real-pkg-zzz-987"], { AGENT_READABLE_CACHE: cacheDir });
+    assert.equal(result.code, 1);
+    assert.ok(result.stderr.includes("not installed"));
+    assert.ok(result.stderr.includes("--install"));
   });
 
   it("prints help for a class instance from .mjs fixture", async () => {
@@ -258,7 +274,7 @@ export declare class Client {
     writeFileSync(fakeNpm, "#!/bin/sh\necho 'simulated npm install failure' >&2\nexit 1\n");
     chmodSync(fakeNpm, 0o755);
 
-    const result = await runCli(["nonexistent-pkg-xyz-12345"], {
+    const result = await runCli(["--install", "nonexistent-pkg-xyz-12345"], {
       AGENT_READABLE_CACHE: join(FIXTURES_DIR, "cache"),
       PATH: `${fakeBinDir}:${process.env.PATH ?? ""}`,
     });

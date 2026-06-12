@@ -34,13 +34,14 @@ npx agent-readable-ts ./src/widget.ts:Widget   # a local TypeScript file
 ### Usage
 
 ```sh
-agent-readable-ts <package-name>[:<export-name>]
+agent-readable-ts [--install] <package-name>[:<export-name>]
 agent-readable-ts <module-path>[:<export-name>]
 ```
 
 - **`package-name`** — any installed npm package (e.g. `commander`, `pino`, `@scope/package`)
 - **`module-path`** — a file path (`.js`, `.mjs`, or `.ts`) relative to the current directory
 - **`export-name`** — the named export to document (use dots for nested access, e.g. `Things.Helper`)
+- **`--install`** — allow fetching a package on demand when it is not installed locally (see [Security](#security))
 
 If no export name is given for a **package**, all exports are listed. If no export name is given for a **file**, the module namespace object is documented.
 
@@ -119,6 +120,19 @@ npx agent-readable-ts ./src/widget.ts:Widget    # a class export
 npx agent-readable-ts ./src/util.ts:connect     # a function export
 npx agent-readable-ts ./dist/api.js:fetch       # a .js file with adjacent api.d.ts
 ```
+
+### Security
+
+To document a package, the CLI imports it, which executes the package's top-level code — only point it at packages you trust to run on your machine.
+
+When a package is not resolvable from the current project, the CLI can fetch it on demand with `npm install`. This never happens silently:
+
+- **Opt-in only.** On-demand fetching requires the `--install` flag. Without it, the CLI exits with an error telling you how to install the package yourself.
+- **Isolated cache.** Fetched packages go into `~/.cache/agent-readable-ts` (override with the `AGENT_READABLE_CACHE` environment variable), never into your project's `node_modules` or `package.json`.
+- **No lifecycle scripts.** The install runs with `--ignore-scripts`, so `preinstall`/`postinstall` scripts of fetched packages are never executed.
+- **No re-fetching.** Packages already present in the cache are loaded from disk without touching the network, and never require `--install` again.
+
+Packages already installed in your project are always loaded directly — no network access, no cache.
 
 ## Two protocols
 
