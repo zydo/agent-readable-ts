@@ -11,6 +11,13 @@ function. Consumers call `agentHelp(target)` or the `agent-readable-ts` CLI to g
 compact Markdown with the real callable surface plus any author-supplied
 behavioral notes.
 
+To let your coding agent automatically call `agentHelp()` before using an
+unfamiliar API, install the companion skill:
+
+```sh
+npx skills add zydo/skills --skill agent-readable
+```
+
 ```ts
 import { agentHelp } from "agent-readable-ts";
 
@@ -51,15 +58,6 @@ See [Getting Started](docs/getting-started.md) for full install and CLI usage.
 - [Examples](docs/examples.md)
 - [Authoring Notes](docs/authoring.md)
 - [FAQ](docs/faq.md)
-
-## For Coding Agents
-
-Install the agent skill to have this run automatically before coding against
-unfamiliar packages:
-
-```sh
-npx skills add zydo/skills --skill agent-readable
-```
 
 ## Other Languages
 
