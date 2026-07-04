@@ -17,6 +17,7 @@
     "agent-readable-ts": "dist/src/cli.js"
   },
   "files": [
+    "docs",
     "dist/src"
   ],
   "scripts": {
